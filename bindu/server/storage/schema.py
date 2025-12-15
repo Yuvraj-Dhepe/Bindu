@@ -151,6 +151,43 @@ task_feedback_table = Table(
 )
 
 # -----------------------------------------------------------------------------
+# Agent Prompts Table
+# -----------------------------------------------------------------------------
+
+agent_prompts_table = Table(
+    "agent_prompts",
+    metadata,
+    # Primary key
+    Column("id", PG_UUID(as_uuid=True), primary_key=True, nullable=False),
+    # Agent ID (from AgentManifest, but not FK enforced as agent table doesn't exist)
+    Column("agent_id", String(255), nullable=False),
+    # Versioning
+    Column("version", String(50), nullable=False),
+    # Content
+    Column("prompt_text", String, nullable=False),
+    Column("metadata", JSONB, nullable=True, server_default="{}"),
+    # State
+    Column(
+        "state",
+        String(20),
+        nullable=False,
+        default="candidate",
+    ),  # candidate, active, archived
+    # Timestamps
+    Column(
+        "created_at",
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    ),
+    # Indexes
+    Index("idx_agent_prompts_agent_id", "agent_id"),
+    Index("idx_agent_prompts_state", "state"),
+    # Table comment
+    comment="Versioned agent prompts for DSPy optimization",
+)
+
+# -----------------------------------------------------------------------------
 # Helper Functions
 # -----------------------------------------------------------------------------
 

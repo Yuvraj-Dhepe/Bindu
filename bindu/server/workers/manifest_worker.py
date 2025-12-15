@@ -50,6 +50,7 @@ from bindu.server.workers.helpers import ResponseDetector, ResultProcessor
 from bindu.utils.logging import get_logger
 from bindu.utils.retry import retry_worker_operation
 from bindu.utils.worker_utils import ArtifactBuilder, MessageConverter, TaskStateManager
+from bindu.server.prompt_manager import PromptManager
 
 tracer = get_tracer("bindu.server.workers.manifest_worker")
 logger = get_logger("bindu.server.workers.manifest_worker")
@@ -85,6 +86,12 @@ class ManifestWorker(Worker):
         default=None
     )
     """Optional callback for task lifecycle notifications (task_id, context_id, state, final)."""
+
+    _prompt_manager: PromptManager = field(init=False)
+
+    def __post_init__(self):
+        """Initialize PromptManager."""
+        self._prompt_manager = PromptManager(self.storage)
 
     @retry_worker_operation()
     async def run_task(self, params: TaskSendParams) -> None:
@@ -135,6 +142,21 @@ class ManifestWorker(Worker):
         # Step 2: Build conversation history (A2A Protocol)
         message_history = await self._build_complete_message_history(task)
 
+        # Optimization: Fetch optimized prompt
+        optimized_prompt = await self._prompt_manager.get_active_prompt(str(self.manifest.id))
+        prompt_metadata = {}
+
+        if optimized_prompt:
+            prompt_metadata["prompt_version"] = optimized_prompt["version"]
+            prompt_metadata["prompt_id"] = str(optimized_prompt["id"])
+
+            # Inject optimized prompt
+            # NOTE: We prepend it. If a system prompt is also added later (for structured response),
+            # it will be added BEFORE this one if we follow the current logic.
+            # However, usually specific instructions should come after general instructions.
+            # Let's see.
+            message_history = [{"role": "system", "content": optimized_prompt["prompt_text"]}] + (message_history or [])
+
         try:
             # Step 3: Execute manifest with system prompt (if enabled)
             if (
@@ -142,6 +164,8 @@ class ManifestWorker(Worker):
                 and app_settings.agent.enable_structured_responses
             ):
                 # Inject structured response system prompt as first message
+                # This prompt forces the agent to output JSON for clarifications.
+                # It should probably be the very first message.
                 system_prompt = app_settings.agent.structured_response_system_prompt
                 if system_prompt:
                     # Create new list to avoid mutating original message_history
@@ -154,14 +178,17 @@ class ManifestWorker(Worker):
                 start_time = time.time()
 
                 # Set agent-specific attributes
-                agent_span.set_attributes(
-                    {
-                        "bindu.agent.name": self.manifest.name,
-                        "bindu.agent.did": str(self.manifest.did_extension.did),
-                        "bindu.agent.message_count": len(message_history or []),
-                        "bindu.component": "agent_execution",
-                    }
-                )
+                attributes = {
+                    "bindu.agent.name": self.manifest.name,
+                    "bindu.agent.did": str(self.manifest.did_extension.did),
+                    "bindu.agent.message_count": len(message_history or []),
+                    "bindu.component": "agent_execution",
+                }
+
+                if optimized_prompt:
+                     attributes["bindu.agent.prompt_version"] = optimized_prompt["version"]
+
+                agent_span.set_attributes(attributes)
 
                 try:
                     # Pass message history as structured list of dicts
@@ -212,7 +239,7 @@ class ManifestWorker(Worker):
                         "task.state_changed",
                         attributes={"from_state": "working", "to_state": state},
                     )
-                await self._handle_intermediate_state(task, state, message_content)
+                await self._handle_intermediate_state(task, state, message_content, additional_metadata=prompt_metadata)
             else:
                 # Hybrid Pattern: Task complete - generate Message + Artifacts
                 # Add span event for state transition
@@ -223,7 +250,7 @@ class ManifestWorker(Worker):
                         attributes={"from_state": "working", "to_state": state},
                     )
                 await self._handle_terminal_state(
-                    task, results, state, payment_context=payment_context
+                    task, results, state, payment_context=payment_context, additional_metadata=prompt_metadata
                 )
 
         except Exception as e:
@@ -362,7 +389,7 @@ class ManifestWorker(Worker):
     # -------------------------------------------------------------------------
 
     async def _handle_intermediate_state(
-        self, task: dict[str, Any], state: TaskState, message_content: Any
+        self, task: dict[str, Any], state: TaskState, message_content: Any, additional_metadata: dict[str, Any] | None = None
     ) -> None:
         """Handle intermediate task states (input-required, auth-required).
 
@@ -375,6 +402,7 @@ class ManifestWorker(Worker):
             task: Current task
             state: Task state to set
             message_content: Content for agent message (any type: str, dict, list, etc.)
+            additional_metadata: Optional metadata to attach to task
         """
         # Render message content for user; for structured, prefer 'prompt' field
         content = (
@@ -386,7 +414,7 @@ class ManifestWorker(Worker):
             content, task["id"], task["context_id"]
         )
 
-        metadata: dict[str, Any] | None = None
+        metadata: dict[str, Any] | None = additional_metadata
 
         # Update task with state and append agent messages to history
         await self.storage.update_task(

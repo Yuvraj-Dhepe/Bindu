@@ -39,7 +39,7 @@ from bindu.settings import app_settings
 from bindu.utils.logging import get_logger
 
 from .base import Storage
-from .schema import tasks_table, contexts_table, task_feedback_table
+from .schema import tasks_table, contexts_table, task_feedback_table, agent_prompts_table
 
 logger = get_logger("bindu.server.storage.postgres_storage")
 
@@ -830,6 +830,111 @@ class PostgresStorage(Storage[ContextT]):
                     logger.info("Cleared all tasks, contexts, and feedback")
 
         await self._retry_on_connection_error(_clear)
+
+    # -------------------------------------------------------------------------
+    # Prompt Operations
+    # -------------------------------------------------------------------------
+
+    async def store_agent_prompt(
+        self,
+        id: UUID,
+        agent_id: str,
+        version: str,
+        prompt_text: str,
+        state: str = "candidate",
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        """Store a new agent prompt version.
+
+        Args:
+            id: Unique identifier for the prompt version
+            agent_id: The agent ID
+            version: Prompt version string
+            prompt_text: The actual prompt text
+            state: State of the prompt (candidate, active, archived)
+            metadata: Additional metadata
+        """
+        self._ensure_connected()
+
+        async def _store():
+            async with self._session_factory() as session:
+                async with session.begin():
+                    stmt = insert(agent_prompts_table).values(
+                        id=id,
+                        agent_id=agent_id,
+                        version=version,
+                        prompt_text=prompt_text,
+                        state=state,
+                        metadata=metadata or {},
+                    )
+                    await session.execute(stmt)
+
+        await self._retry_on_connection_error(_store)
+
+    async def get_agent_prompts(
+        self, agent_id: str, state: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Retrieve prompts for an agent.
+
+        Args:
+            agent_id: The agent ID
+            state: Optional filter by state
+
+        Returns:
+            List of prompt objects
+        """
+        self._ensure_connected()
+
+        async def _get():
+            async with self._session_factory() as session:
+                stmt = select(agent_prompts_table).where(
+                    agent_prompts_table.c.agent_id == agent_id
+                )
+                if state:
+                    stmt = stmt.where(agent_prompts_table.c.state == state)
+
+                stmt = stmt.order_by(agent_prompts_table.c.created_at.desc())
+
+                result = await session.execute(stmt)
+                rows = result.fetchall()
+
+                return [
+                    {
+                        "id": row.id,
+                        "agent_id": row.agent_id,
+                        "version": row.version,
+                        "prompt_text": row.prompt_text,
+                        "state": row.state,
+                        "metadata": row.metadata,
+                        "created_at": row.created_at,
+                    }
+                    for row in rows
+                ]
+
+        return await self._retry_on_connection_error(_get)
+
+    async def update_agent_prompt_state(
+        self, prompt_id: UUID, state: str
+    ) -> None:
+        """Update the state of an agent prompt.
+
+        Args:
+            prompt_id: The prompt version ID
+            state: New state
+        """
+        self._ensure_connected()
+
+        async def _update():
+            async with self._session_factory() as session:
+                async with session.begin():
+                    stmt = (
+                        update(agent_prompts_table)
+                        .where(agent_prompts_table.c.id == prompt_id)
+                        .values(state=state)
+                    )
+                    await session.execute(stmt)
+
+        await self._retry_on_connection_error(_update)
 
     # -------------------------------------------------------------------------
     # Feedback Operations
