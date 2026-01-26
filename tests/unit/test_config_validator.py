@@ -227,11 +227,12 @@ class TestConfigValidator:
         """Test auth validation when enabled but missing required fields."""
         minimal_config["auth"] = {
             "enabled": True,
+            "provider": "auth0",
             # Missing domain and audience
         }
 
         with pytest.raises(
-            ValueError, match="Auth is enabled but missing required fields"
+            ValueError, match="Auth0 is enabled but missing required fields"
         ):
             ConfigValidator.validate_and_process(minimal_config)
 
@@ -239,6 +240,7 @@ class TestConfigValidator:
         """Test valid auth configuration."""
         minimal_config["auth"] = {
             "enabled": True,
+            "provider": "auth0",
             "domain": "tenant.auth0.com",
             "audience": "https://api.example.com",
         }
@@ -250,6 +252,7 @@ class TestConfigValidator:
         """Test auth validation with invalid domain."""
         minimal_config["auth"] = {
             "enabled": True,
+            "provider": "auth0",
             "domain": "invalid",  # No dot
             "audience": "https://api.example.com",
         }
@@ -261,6 +264,7 @@ class TestConfigValidator:
         """Test auth validation with invalid audience."""
         minimal_config["auth"] = {
             "enabled": True,
+            "provider": "auth0",
             "domain": "tenant.auth0.com",
             "audience": "not-a-url",  # Not a URL
         }
@@ -272,6 +276,7 @@ class TestConfigValidator:
         """Test auth with valid algorithms."""
         minimal_config["auth"] = {
             "enabled": True,
+            "provider": "auth0",
             "domain": "tenant.auth0.com",
             "audience": "https://api.example.com",
             "algorithms": ["RS256", "RS384"],
@@ -284,6 +289,7 @@ class TestConfigValidator:
         """Test auth with invalid algorithms type."""
         minimal_config["auth"] = {
             "enabled": True,
+            "provider": "auth0",
             "domain": "tenant.auth0.com",
             "audience": "https://api.example.com",
             "algorithms": "RS256",  # Should be list
@@ -296,6 +302,7 @@ class TestConfigValidator:
         """Test auth with invalid algorithm value."""
         minimal_config["auth"] = {
             "enabled": True,
+            "provider": "auth0",
             "domain": "tenant.auth0.com",
             "audience": "https://api.example.com",
             "algorithms": ["RS256", "INVALID"],

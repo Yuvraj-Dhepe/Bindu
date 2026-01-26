@@ -307,8 +307,8 @@ class HydraMiddleware(AuthMiddleware):
             user_info = self._extract_user_info(token_payload)
         except Exception as e:
             logger.error(f"Failed to extract user info for {path}: {e}")
+            from bindu.common.protocol.types import InvalidTokenError
             from bindu.utils.request_utils import extract_error_fields
-            from bindu.server.middleware.auth.errors import InvalidTokenError
 
             code, message = extract_error_fields(InvalidTokenError)
             return jsonrpc_error(code=code, message=message, status=401)
@@ -373,7 +373,9 @@ class HydraMiddleware(AuthMiddleware):
         # Special handling for Hydra-specific errors
         if "connection refused" in error_str or "timeout" in error_str:
             logger.error(f"Hydra service unavailable for {path}: {error}")
-            code, message = extract_error_fields("ServiceUnavailableError")
+            from bindu.common.protocol.types import ServiceUnavailableError
+
+            code, message = extract_error_fields(ServiceUnavailableError)
             return jsonrpc_error(
                 code=code,
                 message="Authentication service temporarily unavailable",
@@ -381,7 +383,9 @@ class HydraMiddleware(AuthMiddleware):
                 status=503,
             )
         elif "not active" in error_str:
-            code, message = extract_error_fields("InvalidTokenError")
+            from bindu.common.protocol.types import InvalidTokenError
+
+            code, message = extract_error_fields(InvalidTokenError)
             return jsonrpc_error(
                 code=code,
                 message="Token is not active or has been revoked",
@@ -391,50 +395,3 @@ class HydraMiddleware(AuthMiddleware):
 
         # Fall back to base class error handling
         return super()._handle_validation_error(error, path)
-
-    async def dispatch(self, request: Any, call_next: Any) -> Any:
-        """Override dispatch to handle async token validation.
-
-        Args:
-            request: HTTP request
-            call_next: Next middleware/endpoint in chain
-
-        Returns:
-            Response from endpoint or error response
-        """
-        path = request.url.path
-
-        # Skip authentication for public endpoints
-        if self._is_public_endpoint(path):
-            logger.debug(f"Public endpoint: {path}")
-            return await call_next(request)
-
-        # Extract token
-        token = self._extract_token(request)
-        if not token:
-            logger.warning(f"No token provided for {path}")
-            return await self._auth_required_error(request)
-
-        # Validate token - need to await since _validate_token is now async
-        try:
-            token_payload = await self._validate_token(token)
-        except Exception as e:
-            logger.warning(f"Token validation failed for {path}: {e}")
-            return self._handle_validation_error(e, path)
-
-        # Extract user info
-        try:
-            user_info = self._extract_user_info(token_payload)
-        except Exception as e:
-            logger.error(f"Failed to extract user info for {path}: {e}")
-            code, message = extract_error_fields("InvalidTokenError")
-            return jsonrpc_error(code=code, message=message, status=401)
-
-        # Attach context to request state
-        self._attach_user_context(request, user_info, token_payload)
-
-        logger.debug(
-            f"Authenticated {path} - sub={user_info.get('sub')}, m2m={user_info.get('is_m2m', False)}"
-        )
-
-        return await call_next(request)

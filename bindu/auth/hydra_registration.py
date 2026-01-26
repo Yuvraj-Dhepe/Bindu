@@ -72,6 +72,9 @@ def save_agent_credentials(
 ) -> None:
     """Save agent OAuth credentials to .bindu directory.
 
+    Credentials are keyed by DID (client_id) instead of agent_id because
+    agent_id changes on reload but DID remains stable.
+
     Args:
         credentials: Agent credentials to save
         credentials_dir: Directory to save credentials (typically .bindu)
@@ -88,8 +91,8 @@ def save_agent_credentials(
         except Exception as e:
             logger.warning(f"Failed to load existing credentials: {e}")
 
-    # Update with new credentials
-    existing_creds[credentials.agent_id] = credentials.to_dict()
+    # Update with new credentials - use DID (client_id) as key for stability
+    existing_creds[credentials.client_id] = credentials.to_dict()
 
     # Save to file
     with open(creds_file, "w") as f:
@@ -103,12 +106,15 @@ def save_agent_credentials(
 
 
 def load_agent_credentials(
-    agent_id: str, credentials_dir: Path
+    did: str, credentials_dir: Path
 ) -> Optional[AgentCredentials]:
     """Load agent OAuth credentials from .bindu directory.
 
+    Credentials are looked up by DID (client_id) instead of agent_id because
+    agent_id changes on reload but DID remains stable.
+
     Args:
-        agent_id: Agent identifier
+        did: Agent DID (used as client_id)
         credentials_dir: Directory containing credentials
 
     Returns:
@@ -123,10 +129,13 @@ def load_agent_credentials(
         with open(creds_file, "r") as f:
             all_creds = json.load(f)
 
-        if agent_id in all_creds:
-            return AgentCredentials.from_dict(all_creds[agent_id])
+        # Look up by DID (client_id)
+        if did not in all_creds:
+            return None
+
+        return AgentCredentials.from_dict(all_creds[did])
     except Exception as e:
-        logger.error(f"Failed to load credentials for {agent_id}: {e}")
+        logger.error(f"Failed to load credentials for {did}: {e}")
 
     return None
 
@@ -157,10 +166,10 @@ async def register_agent_in_hydra(
         logger.info("Hydra auto-registration disabled, skipping")
         return None
 
-    # Check if credentials already exist
-    existing_creds = load_agent_credentials(agent_id, credentials_dir)
+    # Check if credentials already exist (lookup by DID)
+    existing_creds = load_agent_credentials(did, credentials_dir)
     if existing_creds:
-        logger.info(f"OAuth credentials already exist for agent: {agent_id}")
+        logger.info(f"OAuth credentials already exist for DID: {did}")
         return existing_creds
 
     # Use DID as client_id for hybrid authentication
@@ -225,7 +234,7 @@ async def register_agent_in_hydra(
                 },
             }
 
-            client = await hydra.create_oauth_client(client_data)
+            await hydra.create_oauth_client(client_data)
             logger.info(f"✅ Agent registered in Hydra: {client_id}")
 
             # Create and save credentials

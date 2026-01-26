@@ -106,11 +106,11 @@ def verify_signature(
         payload_str = json.dumps(payload, sort_keys=True)
 
         # Verify signature with public key
-        from bindu.extensions.did import DIDExtension
+        from bindu.extensions.did import DIDAgentExtension
 
         # Create temporary DID extension for verification
         # We only need the public key for verification
-        is_valid = DIDExtension.verify_signature_with_public_key(
+        is_valid = DIDAgentExtension.verify_signature_with_public_key(
             message=payload_str, signature=signature, public_key=public_key
         )
 
