@@ -6,7 +6,7 @@ from typing import List, Dict, Any
 orchestrator = Orchestrator()
 
 
-def handler(messages: List[Dict[str, Any]]) -> str:
+def handler(messages: list[dict[str, str]]) -> str:
     """
     Protocol-compliant handler for Bindu.
 

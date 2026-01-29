@@ -6,7 +6,7 @@
 
 A production-grade multi-agent system built on top of **Bindu — the identity, communication & payments layer for AI agents.**
 
-This project demonstrates how to design, orchestrate, and deploy a **collaborative society of autonomous AI agents** that can **plan, research, summarize, critique, reflect, and self-improve**.
+This project demonstrates how to design, orchestrate, and deploy a **collaborative society of autonomous AI agents** that can **plan, research, summarize, critique, reflect, and self-improve** — using a protocol-first, composable architecture.
 
 ---
 
@@ -40,9 +40,9 @@ This project **proves that vision in running code.**
 
 # 🧠 Core Idea
 
-Instead of building one big agent, we build **multiple specialized agents**, each responsible for a distinct cognitive role.
+Instead of building one massive agent, we build **multiple specialized agents**, each responsible for a distinct cognitive role.
 
-Complex intelligence **emerges from collaboration**, not from a single massive model.
+Complex intelligence **emerges from collaboration**, not from a single model.
 
 ---
 
@@ -85,28 +85,26 @@ Each stage improves the output — resulting in **self-correcting intelligence**
 
 # 🔬 Design Philosophy
 
-### 1. Protocol First
+### 1. Protocol-First Architecture
 
-Agents do not directly call each other.
-
-They communicate using **Bindu's protocol layer**, enabling:
+At scale, agents communicate using **Bindu’s protocol layer**, enabling:
 
 * Identity verification
 * Message routing
 * Capability negotiation
-* Payment enforcement (future-ready)
+* Secure execution
+
+> In this example, the orchestrator directly invokes agents locally for simplicity and clarity. This models the execution flow while remaining compatible with future protocol-based inter-agent communication.
 
 ---
 
 ### 2. Specialization > Monolith
 
-Each agent focuses on a **single cognitive skill**.
+Each agent focuses on a **single cognitive responsibility**, which:
 
-This:
-
-* Improves reasoning qualitý
+* Improves reasoning quality
 * Reduces hallucination
-* Enables scalability
+* Enables horizontal scalability
 * Allows dynamic agent replacement
 
 ---
@@ -119,7 +117,7 @@ The Reflection Agent evaluates:
 * Logical coherence
 * Completeness
 
-If quality is low → it **re-triggers refinement automatically**.
+If quality is low → it **automatically triggers refinement loops**.
 
 ---
 
@@ -134,22 +132,10 @@ examples/
     ├── critic_agent.py         # Review & refinement agent
     ├── reflection_agent.py     # Self-evaluation & improvement agent
     ├── orchestrator.py         # Multi-agent execution pipeline
-    └── bindu_super_agent.py    # Entry point – launches full swarm
+    ├── run_swarm.py            # Local CLI runner
+    ├── test_planner.py         # Planner validation tests
+    └── bindu_super_agent.py    # Entry point – launches full swarm on Bindu
 ```
-
-Each agent file contains:
-
-* Agent definition
-* Model selection
-* Reasoning strategy
-* Execution logic
-
-The orchestrator controls:
-
-* Agent calling order
-* Data passing
-* Execution flow
-* Failure handling
 
 ---
 
@@ -164,7 +150,7 @@ from agno.agent import Agent
 from agno.models.openai import OpenAIChat
 ```
 
-Each agent uses:
+Each agent follows:
 
 * Clear instructions
 * Focused prompts
@@ -176,7 +162,7 @@ Each agent uses:
 
 The orchestrator defines:
 
-```python
+```text
 Planner → Researcher → Summarizer → Critic → Reflection → Final Output
 ```
 
@@ -184,28 +170,21 @@ This pipeline:
 
 * Converts chaos → structure
 * Turns vague ideas → production-grade outputs
+* Enables automatic self-correction
 
 ---
 
 ## 3️⃣ Bindu Integration
 
-Each agent is:
+The swarm is deployed using **Bindu’s agent runtime**, enabling:
 
-* Bindufied
-* Assigned a DID (Decentralized Identity)
-* Registered into the protocol layer
-
-This allows:
-
-* Agent discovery
-* Protocol messaging
-* Future payments + negotiations
+* DID-based agent identity
+* Protocol-based communication
+* Future-ready support for economic agents
 
 ---
 
 # 🚀 How To Run
-
----
 
 ## 1️⃣ Setup Environment
 
@@ -213,8 +192,12 @@ This allows:
 git clone https://github.com/getbindu/bindu.git
 cd bindu
 python -m venv .venv
-.venv\Scripts\activate   # Windows
-# source .venv/bin/activate  # macOS/Linux
+
+# Windows
+.venv\Scripts\activate
+
+# macOS / Linux
+source .venv/bin/activate
 
 pip install -e .
 ```
@@ -226,14 +209,23 @@ pip install -e .
 ### OpenAI
 
 ```bash
+# Windows
 setx OPENAI_API_KEY "your_openai_key"
+
+# macOS / Linux
+export OPENAI_API_KEY="your_openai_key"
 ```
 
 ### OpenRouter (Optional)
 
 ```bash
+# Windows
 setx OPENAI_API_BASE "https://openrouter.ai/api/v1"
 setx OPENAI_API_KEY "your_openrouter_key"
+
+# macOS / Linux
+export OPENAI_API_BASE="https://openrouter.ai/api/v1"
+export OPENAI_API_KEY="your_openrouter_key"
 ```
 
 ---
@@ -249,7 +241,7 @@ python examples/agent_swarm/bindu_super_agent.py
 ## 4️⃣ Open Interactive UI
 
 ```text
-http://localhost:3773/docs
+http://localhost:3780/docs
 ```
 
 Bindu provides a **custom interactive chat UI** instead of traditional FastAPI Swagger docs.
@@ -284,22 +276,15 @@ Bindu is building:
 
 This project validates:
 
----
-
 ### ✅ Identity Layer
 
 * Every agent receives a **unique DID**
-* Enables trust, authentication, discovery
-
----
+* Enables trust, authentication, and discovery
 
 ### ✅ Communication Layer
 
 * Protocol-based messaging
 * Multi-agent coordination
-* Distributed execution
-
----
 
 ### ✅ Collaboration Layer
 
@@ -307,21 +292,17 @@ This project validates:
 * Agent-to-agent critique
 * Self-improving workflows
 
----
-
 ### 🚀 Future Payment Layer (Ready)
 
 * Architecture supports:
 
   * Paid agent services
   * Usage billing
-  * Execution monetization via x402
+  * Execution monetization
 
 ---
 
 # 🔮 Roadmap Extensions
-
-This system is naturally extensible to:
 
 * Multi-agent negotiation protocols
 * Trust & reputation scoring
@@ -363,5 +344,3 @@ To help developers:
 This swarm is **not a demo**.
 
 It is a **blueprint for how future AI systems will be built.**
-
-
