@@ -163,6 +163,18 @@
 			</div>
 			<button
 				type="button"
+				onclick={() => goto(`${base}/settings/authentication`)}
+				class="group flex h-9 w-full flex-none items-center gap-1 rounded-lg px-3 text-[13px] text-gray-600 dark:text-gray-300 md:rounded-xl md:px-3 {page
+					.url.pathname === `${base}/settings/authentication`
+					? '!bg-gray-100 !text-gray-800 dark:!bg-gray-700 dark:!text-gray-200'
+					: 'bg-white dark:bg-gray-800'}"
+				aria-label="Authentication"
+			>
+				<span class="mr-0.5 text-xs">🔐</span>
+				Authentication
+			</button>
+			<button
+				type="button"
 				onclick={() => goto(`${base}/settings/application`)}
 				class="group flex h-9 w-full flex-none items-center gap-1 rounded-lg px-3 text-[13px] text-gray-600 dark:text-gray-300 md:rounded-xl md:px-3 {page
 					.url.pathname === `${base}/settings/application`
