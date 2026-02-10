@@ -17,9 +17,12 @@
 	import { onDestroy } from "svelte";
 
 	import NavConversationItem from "./NavConversationItem.svelte";
+	import ContextList from "./chat/ContextList.svelte";
 	import type { LayoutData } from "../../routes/$types";
 	import type { ConvSidebar } from "$lib/types/ConvSidebar";
 	import { page } from "$app/state";
+	import { onMount } from "svelte";
+	import { loadContexts, initializeAuth, createNewContext } from "$lib/stores/chat";
 	import InfiniteScroll from "./InfiniteScroll.svelte";
 	import { CONV_NUM_PER_PAGE } from "$lib/constants/pagination";
 	import { browser } from "$app/environment";
@@ -31,6 +34,11 @@
 
 	const publicConfig = usePublicConfig();
 	const client = useAPIClient();
+
+	onMount(() => {
+		initializeAuth();
+		loadContexts();
+	});
 
 	interface Props {
 		conversations: ConvSidebar[];
@@ -52,6 +60,10 @@
 
 	function handleNewChatClick(e: MouseEvent) {
 		isAborted.set(true);
+		
+		// Clear agent context to start fresh
+		createNewContext();
+		console.log('New Chat clicked - context cleared');
 
 		if (requireAuthUser()) {
 			e.preventDefault();
@@ -145,21 +157,8 @@
 <div
 	class="scrollbar-custom flex touch-pan-y flex-col gap-1 overflow-y-auto rounded-r-xl border border-l-0 border-gray-100 from-gray-50 px-3 pb-3 pt-2 text-[.9rem] dark:border-transparent dark:from-gray-800/30 max-sm:bg-gradient-to-t md:bg-gradient-to-l"
 >
-	<div class="flex flex-col gap-0.5">
-		{#each Object.entries(groupedConversations) as [group, convs]}
-			{#if convs.length}
-				<h4 class="mb-1.5 mt-4 pl-0.5 text-sm text-gray-400 first:mt-0 dark:text-gray-500">
-					{titles[group]}
-				</h4>
-				{#each convs as conv}
-					<NavConversationItem {conv} {oneditConversationTitle} {ondeleteConversation} />
-				{/each}
-			{/if}
-		{/each}
-	</div>
-	{#if hasMore}
-		<InfiniteScroll onvisible={handleVisible} />
-	{/if}
+	<!-- Agent Contexts Section -->
+	<ContextList />
 </div>
 <div
 	class="flex touch-none flex-col gap-1 rounded-r-xl border border-l-0 border-gray-100 p-3 text-sm dark:border-transparent md:mt-3 md:bg-gradient-to-l md:from-gray-50 md:dark:from-gray-800/30"

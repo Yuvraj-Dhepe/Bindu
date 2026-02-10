@@ -68,27 +68,36 @@ export class AgentAPI {
     return headers;
   }
 
-  private async request<T>(method: string, params: Record<string, unknown> | unknown[]): Promise<T> {
+  private async request<T>(method: string, params: Record<string, unknown> = {}): Promise<T> {
     const requestId = crypto.randomUUID();
-    const requestBody: JSONRPCRequest = {
+    
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    
+    // Only add Authorization header if token exists (auth is optional)
+    if (this.authToken) {
+      headers['Authorization'] = `Bearer ${this.authToken}`;
+    }
+    
+    const body = {
       jsonrpc: '2.0',
       method,
       params,
-      id: requestId
+      id: requestId,
     };
 
-    const headers = this.getHeaders();
     console.log('=== Agent API Request ===');
-    console.log('URL:', this.baseUrl + '/');
+    console.log('URL:', this.baseUrl);
     console.log('Method:', method);
     console.log('Headers:', headers);
-    console.log('Auth token:', this.authToken ? `${this.authToken.substring(0, 20)}...` : 'null');
-    console.log('Request body:', requestBody);
+    console.log('Auth token:', this.authToken || 'none (optional)');
+    console.log('Request body:', body);
 
     const response = await fetch(this.baseUrl + '/', {
       method: 'POST',
       headers,
-      body: JSON.stringify(requestBody)
+      body: JSON.stringify(body)
     });
 
     console.log('Response status:', response.status);
@@ -131,11 +140,15 @@ export class AgentAPI {
     return this.request<Task>('tasks/get', { taskId });
   }
 
-  async listContexts(limit?: number, offset?: number): Promise<Context[]> {
+  async listContexts(length?: number, offset?: number): Promise<Context[]> {
     const params: Record<string, unknown> = {};
-    if (limit !== undefined) params.limit = limit;
+    if (length !== undefined) params.length = length;
     if (offset !== undefined) params.offset = offset;
     return this.request<Context[]>('contexts/list', params);
+  }
+
+  async listTasks(): Promise<Task[]> {
+    return this.request<Task[]>('tasks/list', {});
   }
 
   async clearContext(contextId: string): Promise<void> {

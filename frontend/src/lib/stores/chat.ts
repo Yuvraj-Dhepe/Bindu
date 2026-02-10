@@ -26,10 +26,10 @@ let pollingInterval: ReturnType<typeof setInterval> | null = null;
 
 export function initializeAuth() {
   if (typeof window !== 'undefined') {
-    // Use the OAuth token from the settings page
+    // Use the OAuth token from the settings page (optional)
     const token = localStorage.getItem('bindu_oauth_token');
     console.log('=== Initializing Auth ===');
-    console.log('Token from localStorage (bindu_oauth_token):', token ? `${token.substring(0, 20)}...` : 'NULL');
+    console.log('Token from localStorage (bindu_oauth_token):', token ? `${token.substring(0, 20)}...` : 'NULL (auth is optional)');
     
     if (token) {
       console.log('Setting token in store and API client');
@@ -37,7 +37,9 @@ export function initializeAuth() {
       agentAPI.setAuthToken(token);
       console.log('Token set successfully');
     } else {
-      console.warn('⚠️ No OAuth token found - please authenticate in Settings > Authentication');
+      console.log('No token found - continuing without authentication (auth is optional)');
+      // Set null token to allow API calls without auth
+      agentAPI.setAuthToken(null);
     }
   }
 }
@@ -128,32 +130,42 @@ export async function loadContexts() {
 
 export async function switchContext(ctxId: string) {
   try {
+    console.log('=== SWITCH CONTEXT START ===', ctxId);
     clearMessages();
     contextId.set(ctxId);
+    console.log('Context ID set to:', ctxId);
     
     const allContexts = get(contexts);
     const selectedContext = allContexts.find(c => c.id === ctxId);
+    console.log('Selected context:', selectedContext);
     
     if (!selectedContext || !selectedContext.taskIds || selectedContext.taskIds.length === 0) {
+      console.log('No context or no tasks found');
       return;
     }
 
+    console.log('Loading tasks:', selectedContext.taskIds);
     const contextTasks: Task[] = [];
     for (const taskId of selectedContext.taskIds) {
       try {
+        console.log('Fetching task:', taskId);
         const task = await agentAPI.getTask(taskId);
+        console.log('Task loaded:', task.id, 'History length:', task.history?.length);
         contextTasks.push(task);
       } catch (err) {
         console.error(`Error loading task ${taskId}:`, err);
       }
     }
 
+    console.log('Sorting', contextTasks.length, 'tasks');
     contextTasks.sort((a, b) => {
       const timeA = new Date(a.status.timestamp).getTime();
       const timeB = new Date(b.status.timestamp).getTime();
       return timeA - timeB;
     });
 
+    console.log('Processing task history into messages...');
+    let messageCount = 0;
     for (const task of contextTasks) {
       const history = task.history || [];
       for (const msg of history) {
@@ -167,15 +179,22 @@ export async function switchContext(ctxId: string) {
           const sender = msg.role === 'user' ? 'user' : 'assistant';
           const state = sender === 'assistant' ? task.status.state : undefined;
           addMessage(text, sender, task.id, state);
+          messageCount++;
         }
       }
     }
+    
+    console.log('Added', messageCount, 'messages to display');
+    console.log('Current messages store length:', get(messages).length);
 
     if (contextTasks.length > 0) {
       const lastTask = contextTasks[contextTasks.length - 1];
       currentTaskId.set(lastTask.id);
       currentTaskState.set(lastTask.status.state);
+      console.log('Set current task:', lastTask.id, 'State:', lastTask.status.state);
     }
+    
+    console.log('=== SWITCH CONTEXT END ===');
   } catch (err) {
     console.error('Error switching context:', err);
     setError('Failed to load context');
@@ -213,64 +232,61 @@ export async function sendMessage(text: string) {
   const currentContext = get(contextId);
   const replyTo = get(replyToTaskId);
 
+  // Determine task ID based on A2A protocol
   let taskId: string;
   const referenceTaskIds: string[] = [];
 
   if (replyTo) {
+    // Explicit reply: new task with reference
     taskId = generateUUID();
     referenceTaskIds.push(replyTo);
   } else if (currentState && isNonTerminalState(currentState) && currentTask) {
+    // Non-terminal state: reuse task
     taskId = currentTask;
   } else if (currentTask) {
+    // Terminal state: new task with reference
     taskId = generateUUID();
     referenceTaskIds.push(currentTask);
   } else {
+    // No current task: new task
     taskId = generateUUID();
   }
 
   const messageId = generateUUID();
-  const newContextId = currentContext || generateUUID();
+  const useContextId = currentContext || generateUUID();
 
   try {
-    const params = {
+    // Add user message immediately
+    addMessage(text, 'user', taskId);
+    replyToTaskId.set(null);
+    isThinking.set(true);
+
+    // Send to agent
+    const task = await agentAPI.sendMessage({
       message: {
         role: 'user' as const,
         parts: [{ kind: 'text' as const, text }],
         kind: 'message' as const,
         messageId,
-        contextId: newContextId,
+        contextId: useContextId,
         taskId,
         ...(referenceTaskIds.length > 0 && { referenceTaskIds })
       },
       configuration: {
         acceptedOutputModes: ['application/json']
       }
-    };
+    });
 
-    const task = await agentAPI.sendMessage(params);
-    
-    const taskContextId = task.context_id || task.contextId;
-    const isNewContext = taskContextId && !currentContext;
-
-    currentTaskId.set(task.id);
-    
-    if (taskContextId) {
+    // Set context ID only once on first message
+    if (!currentContext) {
+      const taskContextId = task.context_id || task.contextId || useContextId;
       contextId.set(taskContextId);
     }
 
-    if (isNewContext) {
-      await loadContexts();
-    }
-
-    const displayMessage = replyTo
-      ? `↩️ Replying to task ${replyTo.substring(0, 8)}...\n\n${text}`
-      : text;
+    // Update current task
+    currentTaskId.set(task.id);
     
-    addMessage(displayMessage, 'user', task.id);
-    
-    replyToTaskId.set(null);
-    isThinking.set(true);
-    
+    // Start polling for response
     startPollingTask(task.id);
   } catch (err) {
     console.error('Error sending message:', err);
@@ -280,8 +296,10 @@ export async function sendMessage(text: string) {
 }
 
 function startPollingTask(taskId: string) {
+  // Clear any existing polling
   if (pollingInterval) {
     clearInterval(pollingInterval);
+    pollingInterval = null;
   }
 
   let lastHistoryLength = 0;
@@ -289,28 +307,29 @@ function startPollingTask(taskId: string) {
   pollingInterval = setInterval(async () => {
     try {
       const task = await agentAPI.getTask(taskId);
-      
       const history = task.history || [];
+      
+      // Add new assistant messages
       if (history.length > lastHistoryLength) {
         for (let i = lastHistoryLength; i < history.length; i++) {
           const msg = history[i];
           if (msg.role === 'assistant') {
-            const parts = msg.parts || [];
-            const textParts = parts
+            const textParts = (msg.parts || [])
               .filter(part => part.kind === 'text')
               .map(part => part.text || '');
             
             if (textParts.length > 0) {
-              const text = textParts.join('\n');
-              addMessage(text, 'assistant', task.id, task.status.state);
+              addMessage(textParts.join('\n'), 'assistant', task.id, task.status.state);
             }
           }
         }
         lastHistoryLength = history.length;
       }
 
+      // Update task state
       currentTaskState.set(task.status.state);
 
+      // Stop polling on terminal state
       if (isTerminalState(task.status.state)) {
         isThinking.set(false);
         if (pollingInterval) {

@@ -37,6 +37,13 @@ config = {
         "cors_origins": ["http://localhost:5173"]
     },
     "skills": ["skills/question-answering", "skills/pdf-processing"],
+    "execution_cost": {
+        "amount": "$0.0001",
+        "token": "USDC",
+        "network": "base-sepolia",
+        "pay_to_address": "0x2654bb8B272f117c514aAc3d4032B1795366BA5d",
+        "protected_methods": ["message/send"],
+    },
 }
 
 

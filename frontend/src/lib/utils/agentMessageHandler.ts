@@ -6,6 +6,7 @@
 
 import type { MessageUpdate } from '$lib/types/MessageUpdate';
 import { MessageUpdateType, MessageUpdateStatus } from '$lib/types/MessageUpdate';
+import { handlePaymentRequired, getPaymentHeaders, clearPaymentToken } from './paymentHandler';
 
 const AGENT_BASE_URL = 'http://localhost:3773';
 
@@ -19,7 +20,8 @@ export async function submitTaskFeedback(
 ): Promise<{ message: string; task_id: string }> {
 	const token = getAuthToken();
 	const headers: Record<string, string> = {
-		'Content-Type': 'application/json'
+		'Content-Type': 'application/json',
+		...getPaymentHeaders()
 	};
 	
 	if (token) {
@@ -160,13 +162,14 @@ export async function* sendAgentMessage(
 	message: string,
 	contextId?: string,
 	abortSignal?: AbortSignal,
-	existingTaskId?: string,
+	currentTaskId?: string,
 	taskState?: string,
 	replyToTaskId?: string
-): AsyncGenerator<MessageUpdate, void, void> {
-	const token = getAuthToken();
+): AsyncGenerator<MessageUpdate, void, unknown> {
+	const token = typeof window !== 'undefined' ? localStorage.getItem('bindu_oauth_token') : null;
 	const headers: Record<string, string> = {
-		'Content-Type': 'application/json'
+		'Content-Type': 'application/json',
+		...getPaymentHeaders()
 	};
 	
 	if (token) {
@@ -192,15 +195,15 @@ export async function* sendAgentMessage(
 		const isNonTerminalState = taskState && 
 			(taskState === 'input-required' || taskState === 'auth-required');
 		
-		if (isNonTerminalState && existingTaskId) {
+		if (isNonTerminalState && currentTaskId) {
 			// Continue same task for non-terminal states
-			taskId = existingTaskId;
+			taskId = currentTaskId;
 		} else {
 			// Create new task
 			taskId = generateId();
 			// Reference previous task if it exists
-			if (existingTaskId) {
-				referenceTaskIds.push(existingTaskId);
+			if (currentTaskId) {
+				referenceTaskIds.push(currentTaskId);
 			}
 		}
 	}
@@ -224,33 +227,93 @@ export async function* sendAgentMessage(
 	// Step 1: Send message
 	yield { type: MessageUpdateType.Status, status: MessageUpdateStatus.Started };
 
+	const requestBody = {
+		jsonrpc: '2.0',
+		method: 'message/send',
+		params: {
+			message: agentMessage,
+			configuration: {
+				acceptedOutputModes: ['application/json']
+			}
+		},
+		id: generateId()
+	};
+
 	try {
-		const response = await fetch(`${AGENT_BASE_URL}/`, {
+		let response = await fetch(`${AGENT_BASE_URL}/`, {
 			method: 'POST',
 			headers,
-			body: JSON.stringify({
-				jsonrpc: '2.0',
-				method: 'message/send',
-				params: {
-					message: agentMessage,
-					configuration: {
-						acceptedOutputModes: ['application/json']
-					}
-				},
-				id: generateId()
-			}),
+			body: JSON.stringify(requestBody),
 			signal: abortSignal
 		});
 
-		if (!response.ok) {
+		// Handle 402 Payment Required
+		if (response.status === 402) {
+			console.log('Payment required, starting payment flow...');
+			
+			const paymentSuccess = await handlePaymentRequired((message) => {
+				// Emit status updates during payment
+				console.log('Payment status:', message);
+			});
+
+			if (paymentSuccess) {
+				console.log('Payment completed, retrying request with payment token...');
+				
+				// Retry with payment token
+				const retryHeaders: Record<string, string> = {
+					'Content-Type': 'application/json',
+					...getPaymentHeaders()
+				};
+				
+				if (token) {
+					retryHeaders['Authorization'] = `Bearer ${token}`;
+				}
+
+				response = await fetch(`${AGENT_BASE_URL}/`, {
+					method: 'POST',
+					headers: retryHeaders,
+					body: JSON.stringify(requestBody),
+					signal: abortSignal
+				});
+
+				console.log('Retry response status:', response.status);
+				
+				if (!response.ok) {
+					const errorText = await response.text().catch(() => 'Unknown error');
+					console.error('Retry failed:', response.status, errorText);
+					throw new Error(`Agent request failed after payment: ${response.status} - ${errorText}`);
+				}
+				
+				console.log('Retry successful, continuing with normal flow...');
+				
+				// Update headers to include payment token for subsequent polling requests
+				headers['X-PAYMENT'] = getPaymentHeaders()['X-PAYMENT'] || '';
+			} else {
+				throw new Error('Payment required but not completed');
+			}
+		} else if (!response.ok) {
 			const errorText = await response.text().catch(() => 'Unknown error');
 			throw new Error(`Agent request failed: ${response.status} - ${errorText}`);
 		}
 
-		const result = await response.json();
+		let result;
+		try {
+			result = await response.json();
+		} catch (parseError) {
+			console.error('Failed to parse response JSON:', parseError);
+			const text = await response.text();
+			console.error('Response text:', text);
+			throw new Error('Failed to parse response');
+		}
 		
 		if (result.error) {
+			console.error('Response contains error:', result.error);
 			throw new Error(result.error.message || 'Agent error');
+		}
+
+		if (!result.result) {
+			console.error('Response missing result field:', result);
+			throw new Error('Invalid response: missing result');
 		}
 
 		const task = result.result as AgentTask;
@@ -278,7 +341,7 @@ export async function* sendAgentMessage(
 			if (attempt > 0) {
 				await new Promise(resolve => setTimeout(resolve, pollInterval));
 			}
-
+			
 			// Poll task status
 			const statusResponse = await fetch(`${AGENT_BASE_URL}/`, {
 				method: 'POST',
@@ -291,7 +354,7 @@ export async function* sendAgentMessage(
 				}),
 				signal: abortSignal
 			});
-
+			
 			if (!statusResponse.ok) {
 				continue; // Retry on error
 			}
@@ -332,11 +395,19 @@ export async function* sendAgentMessage(
 					status: MessageUpdateStatus.Finished
 				};
 				
+				// Clear payment token only when task completes (not for input-required)
+				// This ensures new tasks require new payment, but continuing same task reuses token
+				if (taskState === 'completed') {
+					clearPaymentToken();
+				}
+				
 				// Exit immediately - stop polling
 				return;
 			} else if (taskState === 'failed') {
+				clearPaymentToken();
 				throw new Error(`Task failed: ${currentTask.metadata?.error || 'Unknown error'}`);
 			} else if (taskState === 'canceled') {
+				clearPaymentToken();
 				throw new Error('Task was canceled');
 			}
 			// Otherwise continue polling (working, submitted)

@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { contexts, contextId, switchContext, createNewContext, clearContext } from '$lib/stores/chat';
+	import { goto } from '$app/navigation';
+	import { base } from '$app/paths';
+	import { contexts, contextId, clearContext, switchContext } from '$lib/stores/chat';
 	import type { Context } from '$lib/types/agent';
 
 	function formatTime(timestamp: number): string {
@@ -20,8 +22,9 @@
 		return colors[index % colors.length];
 	}
 
-	function handleSwitchContext(ctxId: string) {
-		switchContext(ctxId);
+	async function handleSwitchContext(ctxId: string) {
+		await switchContext(ctxId);
+		goto(`${base}/`);
 	}
 
 	function handleClearContext(event: Event, ctxId: string) {
@@ -35,195 +38,43 @@
 	$: activeContextId = $contextId;
 </script>
 
-<div class="context-sidebar">
-	<div class="sidebar-header">
-		<h3>Contexts</h3>
-		<button class="new-chat-btn" on:click={createNewContext}>+ New</button>
-	</div>
-	
-	<div class="context-list">
-		{#if sortedContexts.length === 0}
-			<div class="empty-state">No contexts yet</div>
-		{:else}
-			{#each sortedContexts as ctx, index (ctx.id)}
-				<div 
-					class="context-item"
-					class:active={ctx.id === activeContextId}
-					on:click={() => handleSwitchContext(ctx.id)}
-					on:keydown={(e) => e.key === 'Enter' && handleSwitchContext(ctx.id)}
-					role="button"
-					tabindex="0"
-				>
-					<div class="context-header">
-						<div class="context-badge {getContextColor(index)}">
-							{ctx.id.substring(0, 8)}
-						</div>
-						<div class="context-time">
-							{formatTime(ctx.timestamp || Date.now())}
-						</div>
-						<button 
-							class="context-clear-btn"
-							on:click={(e) => handleClearContext(e, ctx.id)}
-							title="Clear context"
-						>
-							×
-						</button>
-					</div>
-					<div class="context-preview">
+<div class="flex flex-col gap-0.5">
+	{#if sortedContexts.length === 0}
+		<div class="px-2 py-4 text-center text-xs text-gray-400 dark:text-gray-500">
+			No agent contexts yet
+		</div>
+	{:else}
+		{#each sortedContexts as ctx, index (ctx.id)}
+			<button
+				type="button"
+				class="group relative flex flex-col gap-1 rounded-lg px-2.5 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 {ctx.id === activeContextId ? 'bg-gray-100 dark:bg-gray-700' : ''}"
+				on:click={() => handleSwitchContext(ctx.id)}
+			>
+				<div class="flex items-center gap-2">
+					<span class="truncate font-medium text-gray-900 dark:text-gray-100">
 						{ctx.firstMessage || 'New conversation'}
-					</div>
-					<div class="context-footer">
-						<span class="context-tasks">
-							{ctx.taskCount || 0} task{(ctx.taskCount || 0) !== 1 ? 's' : ''}
-						</span>
-						<span class="context-id-label">
-							Context: {ctx.id.substring(0, 8)}
-						</span>
+					</span>
+					<div
+						role="button"
+						tabindex="0"
+						class="ml-auto hidden size-5 items-center justify-center rounded hover:bg-gray-200 group-hover:flex dark:hover:bg-gray-600 cursor-pointer"
+						on:click={(e) => handleClearContext(e, ctx.id)}
+						on:keydown={(e) => e.key === 'Enter' && handleClearContext(e, ctx.id)}
+						title="Clear context"
+					>
+						<span class="text-xs text-gray-500 dark:text-gray-400">×</span>
 					</div>
 				</div>
-			{/each}
-		{/if}
-	</div>
+				<div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+					<span>{ctx.taskCount || 0} task{(ctx.taskCount || 0) !== 1 ? 's' : ''}</span>
+					<span>•</span>
+					<span class="font-mono">{ctx.id.substring(0, 8)}</span>
+					{#if ctx.timestamp}
+						<span class="ml-auto">{formatTime(ctx.timestamp)}</span>
+					{/if}
+				</div>
+			</button>
+		{/each}
+	{/if}
 </div>
 
-<style>
-	.context-sidebar {
-		width: 300px;
-		background-color: #f8f9fa;
-		border-right: 1px solid #dee2e6;
-		display: flex;
-		flex-direction: column;
-		height: 100%;
-	}
-
-	.sidebar-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 1rem;
-		border-bottom: 1px solid #dee2e6;
-	}
-
-	.sidebar-header h3 {
-		margin: 0;
-		font-size: 1.25rem;
-		font-weight: 600;
-	}
-
-	.new-chat-btn {
-		padding: 0.5rem 1rem;
-		background-color: #007bff;
-		color: white;
-		border: none;
-		border-radius: 0.375rem;
-		cursor: pointer;
-		font-size: 0.875rem;
-		font-weight: 500;
-	}
-
-	.new-chat-btn:hover {
-		background-color: #0056b3;
-	}
-
-	.context-list {
-		flex: 1;
-		overflow-y: auto;
-		padding: 0.5rem;
-	}
-
-	.empty-state {
-		padding: 2rem 1rem;
-		text-align: center;
-		color: #6c757d;
-		font-style: italic;
-	}
-
-	.context-item {
-		padding: 1rem;
-		margin-bottom: 0.5rem;
-		background-color: white;
-		border: 1px solid #dee2e6;
-		border-radius: 0.375rem;
-		cursor: pointer;
-		transition: all 0.2s;
-	}
-
-	.context-item:hover {
-		border-color: #007bff;
-		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-	}
-
-	.context-item.active {
-		background-color: #e7f3ff;
-		border-color: #007bff;
-	}
-
-	.context-header {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		margin-bottom: 0.5rem;
-	}
-
-	.context-badge {
-		padding: 0.25rem 0.5rem;
-		border-radius: 0.25rem;
-		font-size: 0.75rem;
-		font-family: 'JetBrains Mono', monospace;
-		font-weight: 600;
-		color: white;
-	}
-
-	.context-badge.blue { background-color: #007bff; }
-	.context-badge.green { background-color: #28a745; }
-	.context-badge.purple { background-color: #6f42c1; }
-	.context-badge.orange { background-color: #fd7e14; }
-	.context-badge.pink { background-color: #e83e8c; }
-
-	.context-time {
-		font-size: 0.75rem;
-		color: #6c757d;
-		margin-left: auto;
-	}
-
-	.context-clear-btn {
-		background: none;
-		border: none;
-		color: #6c757d;
-		cursor: pointer;
-		font-size: 1.5rem;
-		padding: 0;
-		width: 1.5rem;
-		height: 1.5rem;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		border-radius: 0.25rem;
-	}
-
-	.context-clear-btn:hover {
-		background-color: #dc3545;
-		color: white;
-	}
-
-	.context-preview {
-		font-size: 0.875rem;
-		color: #495057;
-		margin-bottom: 0.5rem;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.context-footer {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		font-size: 0.75rem;
-		color: #6c757d;
-	}
-
-	.context-id-label {
-		font-family: 'JetBrains Mono', monospace;
-	}
-</style>

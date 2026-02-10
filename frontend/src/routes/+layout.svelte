@@ -53,13 +53,15 @@
 		try {
 			console.log('Loading agent contexts...');
 			const token = localStorage.getItem('bindu_oauth_token');
-			if (!token) {
-				console.log('No OAuth token found, skipping agent contexts');
-				return;
+			if (token) {
+				console.log('Token found, setting auth token...');
+				agentAPI.setAuthToken(token);
+			} else {
+				console.log('No OAuth token found, continuing without auth (auth is optional)');
+				agentAPI.setAuthToken(null);
 			}
 			
-			console.log('Token found, fetching contexts...');
-			agentAPI.setAuthToken(token);
+			console.log('Fetching contexts...');
 			const contexts = await agentAPI.listContexts(50);
 			console.log('Contexts received:', contexts);
 			console.log('Number of contexts:', contexts.length);

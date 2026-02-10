@@ -14,12 +14,56 @@
 	import { loading } from "$lib/stores/loading.js";
 	import { loadAttachmentsFromUrls } from "$lib/utils/loadAttachmentsFromUrls";
 	import { requireAuthUser } from "$lib/utils/auth";
+	import { 
+		messages as agentMessages, 
+		isThinking, 
+		sendMessage as sendAgentMessage,
+		contextId,
+		setReplyTo,
+		clearReplyTo,
+		replyToTaskId
+	} from "$lib/stores/chat";
+	import type { Message } from "$lib/types/Message";
 
 	let { data } = $props();
 
 	let hasModels = $derived(Boolean(data.models?.length));
 	let files: File[] = $state([]);
 	let draft = $state("");
+	
+	// Check if we're in agent mode (have an active context OR messages)
+	// Keep agent mode active if we have messages, even if context temporarily clears
+	let isAgentMode = $derived($contextId !== null || $agentMessages.length > 0);
+	
+	// Convert agent messages to display format
+	let displayMessages = $derived($agentMessages.map(msg => ({
+		id: msg.id,
+		content: msg.text,
+		from: (msg.role === 'user' ? 'user' : msg.role === 'assistant' ? 'assistant' : 'system') as 'user' | 'assistant' | 'system',
+		children: [] as string[],
+		createdAt: new Date(msg.timestamp),
+		updatedAt: new Date(msg.timestamp),
+		// Add taskMetadata so TaskInfo component can display info button
+		...(msg.taskId && {
+			taskMetadata: {
+				taskId: msg.taskId,
+				contextId: $contextId || undefined,
+				status: msg.state || 'completed'
+			}
+		})
+	} as Message)));
+	
+	// Debug logging
+	$effect(() => {
+		console.log('=== HOME PAGE STATE ===');
+		console.log('isAgentMode:', isAgentMode);
+		console.log('contextId:', $contextId);
+		console.log('agentMessages count:', $agentMessages.length);
+		console.log('displayMessages count:', displayMessages.length);
+		console.log('isThinking:', $isThinking);
+		console.log('Messages:', $agentMessages.map(m => ({ role: m.role, text: m.text.substring(0, 30) })));
+		console.log('======================');
+	});
 
 	async function createConversation(message: string) {
 		try {
@@ -128,6 +172,22 @@
 	});
 
 	let currentModel = $derived(data.models[0]);
+	
+	async function handleMessage(message: string) {
+		if (isAgentMode) {
+			await sendAgentMessage(message);
+		} else {
+			await createConversation(message);
+		}
+	}
+	
+	function handleReplyToTask(taskId: string) {
+		setReplyTo(taskId);
+	}
+	
+	function handleClearReply() {
+		clearReplyTo();
+	}
 </script>
 
 <svelte:head>
@@ -135,14 +195,27 @@
 </svelte:head>
 
 {#if hasModels}
-	<ChatWindow
-		onmessage={(message) => createConversation(message)}
-		loading={$loading}
-		{currentModel}
-		models={data.models}
-		bind:files
-		bind:draft
-	/>
+	{#if isAgentMode}
+		<ChatWindow
+			messages={displayMessages}
+			loading={$isThinking}
+			{currentModel}
+			models={data.models}
+			onmessage={handleMessage}
+			onReplyToTask={handleReplyToTask}
+			replyToTaskId={$replyToTaskId}
+			onClearReply={handleClearReply}
+		/>
+	{:else}
+		<ChatWindow
+			onmessage={handleMessage}
+			loading={$loading}
+			{currentModel}
+			models={data.models}
+			bind:files
+			bind:draft
+		/>
+	{/if}
 {:else}
 	<div class="mx-auto my-20 max-w-xl rounded-xl border p-6 text-center dark:border-gray-700">
 		<h2 class="mb-2 text-xl font-semibold">Backend not configured</h2>

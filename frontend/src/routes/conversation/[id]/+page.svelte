@@ -37,6 +37,7 @@
 	let pending = $state(false);
 	let initialRun = true;
 	let showSubscribeModal = $state(false);
+	let isWritingMessage = false; // Guard to prevent concurrent writeMessage calls
 
 	let files: File[] = $state([]);
 	
@@ -123,6 +124,14 @@
 		messageId?: ReturnType<typeof v4>;
 		isRetry?: boolean;
 	}): Promise<void> {
+		// Prevent concurrent calls
+		if (isWritingMessage) {
+			console.warn('⚠️ writeMessage already in progress, ignoring duplicate call');
+			return;
+		}
+		
+		isWritingMessage = true;
+		
 		try {
 			$isAborted = false;
 			$loading = true;
@@ -365,10 +374,8 @@
 						currentTaskId = update.taskId;
 						currentTaskState = update.status;
 						
-						// Reload conversation list when task completes to update sidebar
-						if (update.status === 'completed' || update.status === 'failed') {
-							invalidate(UrlDependency.ConversationList);
-						}
+						// Note: Don't invalidate conversation list here for agent conversations
+						// as it causes data reload which clears the local message state
 						break;
 
 					default:
@@ -385,16 +392,15 @@
 				$error = "Too much traffic, please try again.";
 			} else if (err instanceof Error && err.message.includes("429")) {
 				$error = ERROR_MESSAGES.rateLimited;
-			} else if (err instanceof Error) {
-				$error = err.message;
 			} else {
-				$error = ERROR_MESSAGES.default;
+				console.error(err);
+				$error = err instanceof Error ? err.message : String(err);
 			}
-			console.error(err);
 		} finally {
 			$loading = false;
 			pending = false;
 			clearReply();
+			isWritingMessage = false; // Reset guard
 			// No invalidateAll() - causes reload loop. UI updates reactively.
 		}
 	}
