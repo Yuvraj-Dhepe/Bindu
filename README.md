@@ -404,301 +404,101 @@ Output:
 
 <br/>
 
-## [Authentication](https://docs.getbindu.com/bindu/learn/auth/overview)
+## 🔐 Authentication
 
-Bindu uses Hydra as its authentication backend for production deployments. 
+Bindu uses **Ory Hydra** OAuth2 for secure API access. Authentication is **optional** - perfect for development without auth.
 
-Its Optional - you can run agents with auth too.
-
-Configure Hydra connection via environment variables:
-
+**Quick Setup:**
 ```bash
-# You can find in the env.example file
-# Hydra Configuration
-# We do need ot if you want to keep the important apis behind auth
-# Enable authentication
 AUTH__ENABLED=true
-# Set provider to Hydra
 AUTH__PROVIDER=hydra
 HYDRA__ADMIN_URL=https://hydra-admin.getbindu.com
 HYDRA__PUBLIC_URL=https://hydra.getbindu.com
 ```
 
-When you will deploy the agent, you can grab the access token by calling the api.
-
+**Get Access Token:**
 ```bash
 curl -X POST https://hydra.getbindu.com/oauth2/token \
-  -H "Content-Type: application/x-www-form-urlencoded" \
   -d "grant_type=client_credentials" \
   -d "client_id=did:bindu:<YOUR_AGENT_DID>" \
-  -d "client_secret=<YOUR_CLIENT_SECRET>" \
-  -d "scope=openid offline agent:read agent:write"
+  -d "client_secret=<YOUR_CLIENT_SECRET>"
 ```
-You can find the agent id in the agent card and can get the client secret from the .bindu/oauth_credentials.json file.
 
-You can use the UI aslo to grab the access token.
-
-Go to frontend then `npm run dev`
- - Settings -> Authentication -> Provide YOUR_CLIENT_SECRET -> Get Access Token
+📖 **[Full Authentication Guide →](docs/AUTHENTICATION.md)**
 
 ---
 
 <br/>
 
-## [Payment Integration (X402)](https://docs.getbindu.com/bindu/learn/payment/overview)
+## 💰 Payment Integration (X402)
 
-Bindu supports the **X402 payment protocol**, enabling you to monetize your AI agents by requiring cryptocurrency payments before executing specific methods. This allows you to build paid AI services with native blockchain payment integration.
+Monetize your AI agents with **X402 payment protocol** - accept USDC payments on Base blockchain before executing protected methods.
 
-### Configuration
-
-Add the `execution_cost` configuration to your agent config to enable payment gating:
-
+**Quick Setup:**
 ```python
 config = {
-    "author": "your.email@example.com",
-    "name": "paid_agent",
-    "description": "An agent that requires payment",
-    "deployment": {"url": "http://localhost:3773", "expose": True},
     "execution_cost": {
-        "amount": "$0.0001",           # Amount in USD (will be converted to USDC)
-        "token": "USDC",                # Token type (USDC supported)
-        "network": "base-sepolia",      # Network (base-sepolia for testing, base for production)
-        "pay_to_address": "0x265<your-wallet-address>",  # Your wallet address
-        "protected_methods": [
-            "message/send"              # Methods that require payment
-        ]
+        "amount": "$0.0001",
+        "token": "USDC",
+        "network": "base-sepolia",  # or "base" for production
+        "pay_to_address": "0xYourWalletAddress",
+        "protected_methods": ["message/send"]
     }
 }
 ```
 
-### Setup for Testing
+**Payment Flow:**
+1. User initiates payment session → Gets browser URL
+2. User pays with MetaMask/Coinbase Wallet → Blockchain verification
+3. User receives payment token → Can call protected methods
 
-#### 1. Create a Crypto Wallet
+<img src="assets/payment-required-base.png" alt="Payment Screen" width="400" />
 
-Choose one of these wallet options:
-
-**MetaMask (Recommended):**
-1. Install the [MetaMask browser extension](https://metamask.io/)
-2. Create a new wallet or import an existing one
-3. Copy your wallet address (starts with `0x...`)
-
-or 
-
-**Coinbase Wallet:**
-1. Install the [Coinbase Wallet extension](https://www.coinbase.com/wallet)
-2. Set up your wallet
-3. Copy your wallet address
-
-#### 2. Get Test USDC
-
-For testing on Base Sepolia testnet:
-
-1. **Get Base Sepolia ETH** (for gas fees):
-   - Visit [Chainlink Faucet](https://faucets.chain.link/base-sepolia)
-   - Connect your wallet
-   - Request test ETH
-
-2. **Get Base Sepolia USDC**:
-   - The payment system will guide you through obtaining test USDC
-   - Alternatively, use a Base Sepolia faucet that provides USDC
-
-#### 3. Update Agent Configuration
-
-Add your wallet address to the agent config:
-
-```python
-"pay_to_address": "0xYourWalletAddressHere"  # Replace with your actual address
-```
-
-### Payment Flow
-
-#### Step 1: Start a Payment Session
-
-When a user tries to access a protected method, they must first initiate a payment session:
-
-```bash
-curl --location --request POST 'http://localhost:3773/api/start-payment-session' \
---header 'Content-Type: application/json' \
---header 'Authorization: Bearer <your-access-token>'
-```
-
-**Response:**
-```json
-{
-    "session_id": "<session-id>",
-    "browser_url": "http://localhost:3773/payment-capture?session_id=<session-id>",
-    "expires_at": "<expires-at>",
-    "status": "pending"
-}
-```
-
-**Response Fields:**
-- `session_id`: Unique identifier for this payment session
-- `browser_url`: URL to open in browser for payment completion
-- `expires_at`: Session expiration timestamp (typically 60 seconds)
-- `status`: Current payment status (`pending`, `completed`, or `failed`)
-
-#### Step 2: Complete Payment in Browser
-
-1. Open the `browser_url` in your web browser
-2. Connect your wallet (MetaMask or Coinbase Wallet)
-3. Review the payment details:
-   - Amount in USDC
-   - Recipient address
-   - Network (Base Sepolia)
-4. Approve and sign the transaction
-5. Wait for blockchain confirmation
-
-<img src="assets/payment-required-base.png" alt="Payment Required Screen" width="500" />
-
-#### Step 3: Verify Payment Status
-
-After completing the payment, check the session status:
-
-```bash
-curl --location 'http://localhost:3773/api/payment-status/<session_id>' \
---header 'Authorization: Bearer <your-access-token>'
-```
-
-**Successful Payment Response:**
-```json
-{
-    "session_id": "LJK3cVOhBl2OBm_9lkJZKyPRxNXjueJUmO7gPmu1unc",
-    "status": "completed",
-    "payment_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-}
-```
-
-<img src="assets/payment-required-success.png" alt="Payment Success Screen" width="500" />
-
-#### Step 4: Use the Agent with Payment Token
-
-Include the `payment_token` in your agent requests:
-
-```bash
-curl --location 'http://localhost:3773/' \
---header 'Content-Type: application/json' \
---header 'Authorization: Bearer <your-access-token>' \
---header 'X-Payment-Token: <payment-token>' \
---data '{
-    "jsonrpc": "2.0",
-    "method": "message/send",
-    "params": {
-        "message": {
-            "role": "user",
-            "content": "Hello, paid agent!"
-        }
-    },
-    "id": 1
-}'
-```
-
-### Example Implementation
-
-See the complete example at:
-```
-examples/beginner/echo_agent_behind_paywall.py
-```
-
-### UI Integration
-
-From the UI, you can obtain the access token and use it to initiate payment sessions.
-
-**Important Payment Behavior:**
-- Each new task requires payment when the agent is behind a paywall
-- If a task returns `input_required` status, no payment is needed for that interaction
-- Once a task completes successfully, a new payment is required for the next task, even within the same conversation/context
-- Payment tokens are task-specific and cannot be reused across multiple completed tasks
+📖 **[Full Payment Guide →](docs/PAYMENT.md)** - Wallet setup, testing, production deployment
 
 ---
 
 <br/>
 
-## [Postgres Storage](https://docs.getbindu.com/bindu/learn/storage/overview)
+## 💾 PostgreSQL Storage
 
-Bindu uses PostgreSQL as its persistent storage backend for production deployments. The storage layer is built with SQLAlchemy's async engine and uses imperative mapping with protocol TypedDicts.
+Persistent storage for production deployments. **Optional** - InMemoryStorage used by default.
 
-Its Optional  - InMemoryStorage is used by default.
-
-### 📊 Storage Structure
-
-The storage layer uses three main tables:
-
-1. **tasks_table**: Stores all tasks with JSONB history and artifacts
-2. **contexts_table**: Maintains context metadata and message history
-3. **task_feedback_table**: Optional feedback storage for tasks
-
-### ⚙️ Configuration
-
-<details>
-<summary><b>View configuration example</b> (click to expand)</summary>
-
-Configure PostgreSQL connection via environment variables:
-
+**Quick Setup:**
 ```bash
-# You can find in the env.example file
-# Storage Configuration
-# Type: "postgres" for PostgreSQL or "memory" for in-memory storage
 STORAGE_TYPE=postgres
 DATABASE_URL=postgresql+asyncpg://<user>:<password>@<host>:<port>/<database>?ssl=require
 ```
 
-Then use the simplified config:
+**Features:**
+- Task history with JSONB
+- Context management
+- Automatic migrations
+- Task-first pattern support
 
-```json
-config = {
-    "author": "your.email@example.com",
-    "name": "research_agent",
-    "description": "A research assistant agent",
-    "deployment": {"url": "http://localhost:3773", "expose": True},
-    "skills": ["skills/question-answering", "skills/pdf-processing"],
-}
-```
-
-</details>
-
- **💡 Task-First Pattern**: The storage supports Bindu's task-first approach where tasks can be continued by appending messages to non-terminal tasks, enabling incremental refinements and multi-turn conversations.
+📖 **[Full Storage Guide →](docs/STORAGE.md)** - Setup, cloud providers, migrations
 
 ---
 
 <br/>
 
-## [Redis Scheduler](https://docs.getbindu.com/bindu/learn/scheduler/overview)
+## 📋 Redis Scheduler
 
-Bindu uses Redis as its distributed task scheduler for coordinating work across multiple workers and processes. The scheduler uses Redis lists with blocking operations for efficient task distribution.
+Distributed task scheduling for multi-worker deployments. **Optional** - InMemoryScheduler used by default.
 
-Its Optional - InMemoryScheduler is used by default.
-
-### ⚙️ Configuration
-
-<details>
-<summary><b>View configuration example</b> (click to expand)</summary>
-
-Configure Redis connection via environment variables:
-
+**Quick Setup:**
 ```bash
-# You can find in the env.example file
-# Scheduler Configuration
-# Type: "redis" for distributed scheduling or "memory" for single-process
 SCHEDULER_TYPE=redis
 REDIS_URL=rediss://default:<password>@<host>:<port>
 ```
 
-Then use the simplified config:
+**Features:**
+- Distributed queuing
+- Blocking operations (no polling)
+- Multi-worker support
+- High throughput
 
-```json
-config = {
-    "author": "your.email@example.com",
-    "name": "research_agent",
-    "description": "A research assistant agent",
-    "deployment": {"url": "http://localhost:3773", "expose": True},
-    "skills": ["skills/question-answering", "skills/pdf-processing"],
-}
-```
-
-</details>
-
-All operations are queued in Redis and processed by available workers using a blocking pop mechanism, ensuring efficient distribution without polling overhead.
+📖 **[Full Scheduler Guide →](docs/SCHEDULER.md)** - Multi-worker setup, cloud Redis, monitoring
 
 ---
 
@@ -1177,62 +977,32 @@ config = {
 
 <br/>
 
-## OpenTelemetry
+## 📊 Observability & Monitoring
 
-Bindu integrates with **OpenTelemetry (OTEL)** to provide observability and tracing for your agents. Track agent execution, monitor performance, and debug issues using industry-standard observability platforms like **Arize** and **Langfuse**.
+Track performance, debug issues, and monitor your agents with **OpenTelemetry** and **Sentry**.
 
-### Supported Platforms
-
-- **[Arize](https://arize.com/)** - AI observability platform for monitoring and debugging ML models
-- **[Langfuse](https://langfuse.com/)** - Open-source LLM engineering platform with tracing and analytics
-
-### Configuration
-
-Enable OpenTelemetry tracing via environment variables:
-
+**OpenTelemetry (Langfuse, Arize):**
 ```bash
-# Enable telemetry
 TELEMETRY_ENABLED=true
-
-# OTEL endpoint (Langfuse example)
 OLTP_ENDPOINT=https://cloud.langfuse.com/api/public/otel/v1/traces
-
-# Service name for your agent
-OLTP_SERVICE_NAME=research-agent
-
-# Authentication headers (Langfuse uses Basic Auth with API keys)
-OLTP_HEADERS={"Authorization":"Basic <base64-encoded-public-key:secret-key>"}
-
-# Optional: Enable verbose logging
-OLTP_VERBOSE_LOGGING=true
+OLTP_SERVICE_NAME=your-agent-name
+OLTP_HEADERS={"Authorization":"Basic <base64-credentials>"}
 ```
 
-### Platform-Specific Setup
+**Sentry Error Tracking:**
+```bash
+SENTRY_ENABLED=true
+SENTRY_DSN=https://<key>@<org>.ingest.sentry.io/<project>
+SENTRY_ENVIRONMENT=production
+```
 
-**Langfuse:**
-1. Create an account at [cloud.langfuse.com](https://cloud.langfuse.com)
-2. Generate API keys (public and secret)
-3. Base64 encode `public-key:secret-key` for the Authorization header
-4. Configure environment variables:
-   ```bash
-   TELEMETRY_ENABLED=true
-   OLTP_ENDPOINT=https://cloud.langfuse.com/api/public/otel/v1/traces
-   OLTP_SERVICE_NAME=your-agent-name
-   OLTP_HEADERS={"Authorization":"Basic <base64-encoded-public-key:secret-key>"}
-   OLTP_VERBOSE_LOGGING=true  # Optional
-   ```
+**Features:**
+- Distributed tracing
+- LLM call monitoring
+- Error tracking
+- Performance metrics
 
-**Arize:**
-1. Create an account at [arize.com](https://arize.com)
-2. Get your Space ID and API key from the Arize dashboard
-3. Configure environment variables:
-   ```bash
-   TELEMETRY_ENABLED=true
-   OLTP_ENDPOINT=https://otlp.arize.com/v1
-   OLTP_SERVICE_NAME=your-agent-name
-   OLTP_HEADERS={"space_id":"<your-space-id>","api_key":"<your-api-key>"}
-   OLTP_VERBOSE_LOGGING=true  # Optional
-   ```
+📖 **[Full Observability Guide →](docs/OBSERVABILITY.md)** - Platform setup, custom instrumentation, troubleshooting
 
 ---
 
